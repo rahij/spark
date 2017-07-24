@@ -26,11 +26,18 @@ import org.apache.hadoop.metrics2.MetricsRecordBuilder;
 import org.apache.hadoop.metrics2.MetricsSource;
 
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Modeled off of YARN's NodeManagerMetrics.
  */
 public class YarnShuffleServiceMetrics implements MetricsSource {
+
+  // converting from the dropwizard-metrics default of nanoseconds into milliseconds to match how MetricsServlet
+  // serializes times (to milliseconds) configured via the MetricsModule passed into its Jackson ObjectMapper. Without
+  // this rate factor applied, the Timer metrics from ExternalShuffleBlockManager#ShuffleMetrics with "Millis" suffixes
+  // are misleading, as they would otherwise contain values in nanoseconds units
+  private static final double rateFactor = (double) TimeUnit.MILLISECONDS.toNanos(1L);
 
   private final MetricSet metricSet;
 
@@ -77,14 +84,14 @@ public class YarnShuffleServiceMetrics implements MetricsSource {
       builder.addGauge(
         new ShuffleServiceMetricsInfo(name + "_" + entry.getKey(),
           entry.getKey() + " of " + metricType + " " + name),
-        entry.getValue());
+        entry.getValue() / rateFactor);
     }
 
     for (Map.Entry<String, Long> entry : longValues.entrySet()) {
       builder.addGauge(
         new ShuffleServiceMetricsInfo(name + "_" + entry.getKey(),
           entry.getKey() + " of " + metricType + " " + name),
-        entry.getValue());
+        entry.getValue() / rateFactor);
     }
 
   }
