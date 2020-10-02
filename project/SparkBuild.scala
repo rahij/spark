@@ -296,7 +296,7 @@ object SparkBuild extends PomBuild {
       var failed = 0
       analysis.infos.allInfos.foreach { case (k, i) =>
         i.reportedProblems foreach { p =>
-          val deprecation = p.message.contains("is deprecated")
+          val deprecation = p.message.contains("deprecated")
 
           if (!deprecation) {
             failed = failed + 1
@@ -469,7 +469,6 @@ object SparkParallelTestGrouping {
     "org.apache.spark.sql.catalyst.expressions.MathExpressionsSuite",
     "org.apache.spark.sql.hive.HiveExternalCatalogSuite",
     "org.apache.spark.sql.hive.StatisticsSuite",
-    "org.apache.spark.sql.hive.execution.HiveCompatibilitySuite",
     "org.apache.spark.sql.hive.client.VersionsSuite",
     "org.apache.spark.sql.hive.client.HiveClientVersions",
     "org.apache.spark.sql.hive.HiveExternalCatalogVersionsSuite",
@@ -486,9 +485,14 @@ object SparkParallelTestGrouping {
   )
 
   private val DEFAULT_TEST_GROUP = "default_test_group"
+  private val HIVE_EXECUTION_TEST_GROUP = "hive_execution_test_group"
 
   private def testNameToTestGroup(name: String): String = name match {
     case _ if testsWhichShouldRunInTheirOwnDedicatedJvm.contains(name) => name
+    // Different with the cases in testsWhichShouldRunInTheirOwnDedicatedJvm, here we are grouping
+    // all suites of `org.apache.spark.sql.hive.execution.*` into a single group, instead of
+    // launching one JVM per suite.
+    case _ if name.contains("org.apache.spark.sql.hive.execution") => HIVE_EXECUTION_TEST_GROUP
     case _ => DEFAULT_TEST_GROUP
   }
 
@@ -834,6 +838,8 @@ object Unidoc {
         f.getCanonicalPath.contains("org/apache/spark/shuffle") &&
         !f.getCanonicalPath.contains("org/apache/spark/shuffle/api")))
       .map(_.filterNot(_.getCanonicalPath.contains("org/apache/spark/executor")))
+      .map(_.filterNot(_.getCanonicalPath.contains("org/apache/spark/ExecutorAllocationClient")))
+      .map(_.filterNot(_.getCanonicalPath.contains("org/apache/spark/scheduler/cluster/CoarseGrainedSchedulerBackend")))
       .map(_.filterNot(f =>
         f.getCanonicalPath.contains("org/apache/spark/unsafe") &&
         !f.getCanonicalPath.contains("org/apache/spark/unsafe/types/CalendarInterval")))
@@ -846,6 +852,7 @@ object Unidoc {
       .map(_.filterNot(_.getCanonicalPath.contains("org/apache/spark/sql/hive/test")))
       .map(_.filterNot(_.getCanonicalPath.contains("org/apache/spark/sql/catalog/v2/utils")))
       .map(_.filterNot(_.getCanonicalPath.contains("org/apache/hive")))
+      .map(_.filterNot(_.getCanonicalPath.contains("org/apache/spark/sql/v2/avro")))
   }
 
   private def ignoreClasspaths(classpaths: Seq[Classpath]): Seq[Classpath] = {
@@ -861,10 +868,10 @@ object Unidoc {
 
     unidocProjectFilter in(ScalaUnidoc, unidoc) :=
       inAnyProject -- inProjects(OldDeps.project, repl, examples, tools, kubernetes,
-        yarn, tags, streamingKafka010, sqlKafka010, avro),
+        yarn, tags, streamingKafka010, sqlKafka010),
     unidocProjectFilter in(JavaUnidoc, unidoc) :=
       inAnyProject -- inProjects(OldDeps.project, repl, examples, tools, kubernetes,
-        yarn, tags, streamingKafka010, sqlKafka010, avro),
+        yarn, tags, streamingKafka010, sqlKafka010),
 
     unidocAllClasspaths in (ScalaUnidoc, unidoc) := {
       ignoreClasspaths((unidocAllClasspaths in (ScalaUnidoc, unidoc)).value)
@@ -1027,16 +1034,7 @@ object TestSettings {
       }.getOrElse(Nil): _*),
     // Show full stack trace and duration in test cases.
     testOptions in Test += Tests.Argument("-oDF"),
-    // Show only the failed test cases with full stack traces in github action to make the log more
-    // readable.
-    // Check https://www.scalatest.org/user_guide/using_the_runner for the details of options .
-    testOptions in Test += Tests.Argument(TestFrameworks.ScalaTest,
-      sys.env.get("GITHUB_ACTIONS").map { _ =>
-        Seq("-eNCXEHLOPQMDF")
-      }.getOrElse(Nil): _*),
     testOptions in Test += Tests.Argument(TestFrameworks.JUnit, "-v", "-a"),
-    // Required to detect Junit tests for each project, see also https://github.com/sbt/junit-interface/issues/35
-    crossPaths := false,
     // Enable Junit testing.
     libraryDependencies += "com.novocode" % "junit-interface" % "0.11" % "test",
     // `parallelExecutionInTest` controls whether test suites belonging to the same SBT project

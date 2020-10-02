@@ -347,7 +347,7 @@ class ExplainSuite extends ExplainSuiteHelper with DisableAdaptiveExecutionSuite
   test("Coalesced bucket info should be a part of explain string") {
     withTable("t1", "t2") {
       withSQLConf(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key -> "0",
-        SQLConf.COALESCE_BUCKETS_IN_SORT_MERGE_JOIN_ENABLED.key -> "true") {
+        SQLConf.COALESCE_BUCKETS_IN_JOIN_ENABLED.key -> "true") {
         Seq(1, 2).toDF("i").write.bucketBy(8, "i").saveAsTable("t1")
         Seq(2, 3).toDF("i").write.bucketBy(4, "i").saveAsTable("t2")
         val df1 = spark.table("t1")
@@ -406,6 +406,21 @@ class ExplainSuite extends ExplainSuiteHelper with DisableAdaptiveExecutionSuite
           assert(expected_plan_fragment1.r.findAllMatchIn(normalizedOutput).length == 1)
         }
       }
+    }
+  }
+
+  test("Explain UnresolvedRelation with CaseInsensitiveStringMap options") {
+    val tableName = "test"
+    withTable(tableName) {
+      val df1 = Seq((1L, "a"), (2L, "b"), (3L, "c")).toDF("id", "data")
+      df1.write.saveAsTable(tableName)
+      val df2 = spark.read
+        .option("key1", "value1")
+        .option("KEY2", "VALUE2")
+        .table(tableName)
+      // == Parsed Logical Plan ==
+      // 'UnresolvedRelation [test], [key1=value1, KEY2=VALUE2]
+      checkKeywordsExistsInExplain(df2, keywords = "[key1=value1, KEY2=VALUE2]")
     }
   }
 }

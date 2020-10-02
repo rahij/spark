@@ -26,7 +26,7 @@ import org.apache.spark.sql.catalyst.parser.ParserInterface
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.connector.catalog.CatalogManager
-import org.apache.spark.sql.execution.{ColumnarRule, QueryExecution, SparkOptimizer, SparkPlanner, SparkSqlParser}
+import org.apache.spark.sql.execution.{ColumnarRule, QueryExecution, SparkOptimizer, SparkPlan, SparkPlanner, SparkSqlParser}
 import org.apache.spark.sql.execution.aggregate.ResolveEncodersInScalaAgg
 import org.apache.spark.sql.execution.analysis.DetectAmbiguousSelfJoin
 import org.apache.spark.sql.execution.command.CommandCheck
@@ -57,7 +57,8 @@ import org.apache.spark.sql.util.ExecutionListenerManager
 @Unstable
 abstract class BaseSessionStateBuilder(
     val session: SparkSession,
-    val parentState: Option[SessionState] = None) {
+    val parentState: Option[SessionState],
+    val options: Map[String, String]) {
   type NewBuilder = (SparkSession, Option[SessionState]) => BaseSessionStateBuilder
 
   /**
@@ -97,6 +98,9 @@ abstract class BaseSessionStateBuilder(
     }.getOrElse {
       val conf = new SQLConf
       mergeSparkConf(conf, session.sparkContext.conf)
+      options.foreach {
+        case (k, v) => conf.setConfString(k, v)
+      }
       conf
     }
   }
@@ -286,6 +290,10 @@ abstract class BaseSessionStateBuilder(
     extensions.buildColumnarRules(session)
   }
 
+  protected def queryStagePrepRules: Seq[Rule[SparkPlan]] = {
+    extensions.buildQueryStagePrepRules(session)
+  }
+
   /**
    * Create a query execution object.
    */
@@ -337,7 +345,8 @@ abstract class BaseSessionStateBuilder(
       () => resourceLoader,
       createQueryExecution,
       createClone,
-      columnarRules)
+      columnarRules,
+      queryStagePrepRules)
   }
 }
 

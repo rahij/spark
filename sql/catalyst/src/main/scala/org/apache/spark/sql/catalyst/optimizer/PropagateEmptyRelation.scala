@@ -50,8 +50,8 @@ object PropagateEmptyRelation extends Rule[LogicalPlan] with PredicateHelper wit
   override def conf: SQLConf = SQLConf.get
 
   def apply(plan: LogicalPlan): LogicalPlan = plan transformUp {
-    case p @ Union(children) if children.exists(isEmptyLocalRelation) =>
-      val newChildren = children.filterNot(isEmptyLocalRelation)
+    case p: Union if p.children.exists(isEmptyLocalRelation) =>
+      val newChildren = p.children.filterNot(isEmptyLocalRelation)
       if (newChildren.isEmpty) {
         empty(p)
       } else {
@@ -103,8 +103,8 @@ object PropagateEmptyRelation extends Rule[LogicalPlan] with PredicateHelper wit
       case _: Filter => empty(p)
       case _: Sample => empty(p)
       case _: Sort => empty(p)
-      case _: GlobalLimit => empty(p)
-      case _: LocalLimit => empty(p)
+      case _: GlobalLimit if !p.isStreaming => empty(p)
+      case _: LocalLimit if !p.isStreaming => empty(p)
       case _: Repartition => empty(p)
       case _: RepartitionByExpression => empty(p)
       // An aggregate with non-empty group expression will return one output row per group when the

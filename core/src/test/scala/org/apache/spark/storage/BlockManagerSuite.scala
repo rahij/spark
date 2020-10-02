@@ -32,9 +32,11 @@ import scala.reflect.ClassTag
 import org.apache.commons.lang3.RandomUtils
 import org.mockito.{ArgumentCaptor, ArgumentMatchers => mc}
 import org.mockito.Mockito.{doAnswer, mock, never, spy, times, verify, when}
-import org.scalatest._
+import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach, PrivateMethodTester}
 import org.scalatest.concurrent.{Signaler, ThreadSignaler, TimeLimits}
 import org.scalatest.concurrent.Eventually._
+import org.scalatest.matchers.must.Matchers
+import org.scalatest.matchers.should.Matchers._
 
 import org.apache.spark._
 import org.apache.spark.broadcast.BroadcastManager
@@ -142,10 +144,28 @@ class BlockManagerSuite extends SparkFunSuite with Matchers with BeforeAndAfterE
     blockManager
   }
 
+  // Save modified system properties so that we can restore them after tests.
+  val originalArch = System.getProperty("os.arch")
+  val originalCompressedOops = System.getProperty(TEST_USE_COMPRESSED_OOPS_KEY)
+
+  def reinitializeSizeEstimator(arch: String, useCompressedOops: String): Unit = {
+    def set(k: String, v: String): Unit = {
+      if (v == null) {
+        System.clearProperty(k)
+      } else {
+        System.setProperty(k, v)
+      }
+    }
+    set("os.arch", arch)
+    set(TEST_USE_COMPRESSED_OOPS_KEY, useCompressedOops)
+    val initialize = PrivateMethod[Unit](Symbol("initialize"))
+    SizeEstimator invokePrivate initialize()
+  }
+
   override def beforeEach(): Unit = {
     super.beforeEach()
     // Set the arch to 64-bit and compressedOops to true to get a deterministic test-case
-    System.setProperty("os.arch", "amd64")
+    reinitializeSizeEstimator("amd64", "true")
     conf = new SparkConf(false)
     init(conf)
 
@@ -166,12 +186,12 @@ class BlockManagerSuite extends SparkFunSuite with Matchers with BeforeAndAfterE
         liveListenerBus, None, blockManagerInfo, mapOutputTracker)),
       rpcEnv.setupEndpoint("blockmanagerHeartbeat",
       new BlockManagerMasterHeartbeatEndpoint(rpcEnv, true, blockManagerInfo)), conf, true))
-
-    val initialize = PrivateMethod[Unit](Symbol("initialize"))
-    SizeEstimator invokePrivate initialize()
   }
 
   override def afterEach(): Unit = {
+    // Restore system properties and SizeEstimator to their original states.
+    reinitializeSizeEstimator(originalArch, originalCompressedOops)
+
     try {
       conf = null
       allStores.foreach(_.stop())
@@ -1855,9 +1875,9 @@ class BlockManagerSuite extends SparkFunSuite with Matchers with BeforeAndAfterE
     val exec1 = "exec1"
     val exec2 = "exec2"
     val exec3 = "exec3"
-    val store1 = makeBlockManager(800, exec1)
-    val store2 = makeBlockManager(800, exec2)
-    val store3 = makeBlockManager(800, exec3)
+    val store1 = makeBlockManager(1000, exec1)
+    val store2 = makeBlockManager(1000, exec2)
+    val store3 = makeBlockManager(1000, exec3)
 
     assert(master.getPeers(store3.blockManagerId).map(_.executorId).toSet === Set(exec1, exec2))
 
@@ -1872,9 +1892,9 @@ class BlockManagerSuite extends SparkFunSuite with Matchers with BeforeAndAfterE
   }
 
   test("test decommissionRddCacheBlocks should offload all cached blocks") {
-    val store1 = makeBlockManager(800, "exec1")
-    val store2 = makeBlockManager(800, "exec2")
-    val store3 = makeBlockManager(800, "exec3")
+    val store1 = makeBlockManager(1000, "exec1")
+    val store2 = makeBlockManager(1000, "exec2")
+    val store3 = makeBlockManager(1000, "exec3")
 
     val data = new Array[Byte](4)
     val blockId = rdd(0, 0)

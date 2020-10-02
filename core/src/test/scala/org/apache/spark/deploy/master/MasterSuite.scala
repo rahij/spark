@@ -31,8 +31,10 @@ import scala.reflect.ClassTag
 import org.json4s._
 import org.json4s.jackson.JsonMethods._
 import org.mockito.Mockito.{mock, when}
-import org.scalatest.{BeforeAndAfter, Matchers, PrivateMethodTester}
+import org.scalatest.{BeforeAndAfter, PrivateMethodTester}
 import org.scalatest.concurrent.Eventually
+import org.scalatest.matchers.must.Matchers
+import org.scalatest.matchers.should.Matchers._
 import other.supplier.{CustomPersistenceEngine, CustomRecoveryModeFactory}
 
 import org.apache.spark.{SecurityManager, SparkConf, SparkFunSuite}
@@ -685,12 +687,20 @@ class MasterSuite extends SparkFunSuite
     }
   }
 
-  // TODO(SPARK-32250): Enable the test back. It is flaky in GitHub Actions.
-  ignore("SPARK-27510: Master should avoid dead loop while launching executor failed in Worker") {
+  test("SPARK-27510: Master should avoid dead loop while launching executor failed in Worker") {
     val master = makeAliveMaster()
     var worker: MockExecutorLaunchFailWorker = null
     try {
-      worker = new MockExecutorLaunchFailWorker(master)
+      val conf = new SparkConf()
+      // SPARK-32250: When running test on Github Action machine, the available processors in JVM
+      // is only 2, while on Jenkins it's 32. For this specific test, 2 available processors, which
+      // also decides number of threads in Dispatcher, is not enough to consume the messages. In
+      // the worst situation, MockExecutorLaunchFailWorker would occupy these 2 threads for
+      // handling messages LaunchDriver, LaunchExecutor at the same time but leave no thread for
+      // the driver to handle the message RegisteredApplication. At the end, it results in the dead
+      // lock situation. Therefore, we need to set more threads to avoid the dead lock.
+      conf.set(Network.RPC_NETTY_DISPATCHER_NUM_THREADS, 6)
+      worker = new MockExecutorLaunchFailWorker(master, conf)
       worker.rpcEnv.setupEndpoint("worker", worker)
       val workerRegMsg = RegisterWorker(
         worker.id,

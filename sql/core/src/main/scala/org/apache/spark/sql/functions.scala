@@ -262,7 +262,7 @@ object functions {
   /**
    * Aggregate function: returns the approximate number of distinct items in a group.
    *
-   * @param rsd maximum estimation error allowed (default = 0.05)
+   * @param rsd maximum relative standard deviation allowed (default = 0.05)
    *
    * @group agg_funcs
    * @since 2.1.0
@@ -274,7 +274,7 @@ object functions {
   /**
    * Aggregate function: returns the approximate number of distinct items in a group.
    *
-   * @param rsd maximum estimation error allowed (default = 0.05)
+   * @param rsd maximum relative standard deviation allowed (default = 0.05)
    *
    * @group agg_funcs
    * @since 2.1.0
@@ -684,8 +684,9 @@ object functions {
   def min(columnName: String): Column = min(Column(columnName))
 
   /**
-   * Aggregate function: returns and array of the approximate percentile values
-   * of numeric column col at the given percentages.
+   * Aggregate function: returns the approximate `percentile` of the numeric column `col` which
+   * is the smallest value in the ordered `col` values (sorted from least to greatest) such that
+   * no more than `percentage` of `col` values is less than the value or equal to that value.
    *
    * If percentage is an array, each value must be between 0.0 and 1.0.
    * If it is a single floating point value, it must be between 0.0 and 1.0.
@@ -991,6 +992,35 @@ object functions {
    */
   def lead(e: Column, offset: Int, defaultValue: Any): Column = withExpr {
     Lead(e.expr, Literal(offset), Literal(defaultValue))
+  }
+
+  /**
+   * Window function: returns the value that is the `offset`th row of the window frame
+   * (counting from 1), and `null` if the size of window frame is less than `offset` rows.
+   *
+   * It will return the `offset`th non-null value it sees when ignoreNulls is set to true.
+   * If all values are null, then null is returned.
+   *
+   * This is equivalent to the nth_value function in SQL.
+   *
+   * @group window_funcs
+   * @since 3.1.0
+   */
+  def nth_value(e: Column, offset: Int, ignoreNulls: Boolean): Column = withExpr {
+    NthValue(e.expr, Literal(offset), ignoreNulls)
+  }
+
+  /**
+   * Window function: returns the value that is the `offset`th row of the window frame
+   * (counting from 1), and `null` if the size of window frame is less than `offset` rows.
+   *
+   * This is equivalent to the nth_value function in SQL.
+   *
+   * @group window_funcs
+   * @since 3.1.0
+   */
+  def nth_value(e: Column, offset: Int): Column = withExpr {
+    NthValue(e.expr, Literal(offset), false)
   }
 
   /**
@@ -2478,12 +2508,27 @@ object functions {
   /**
    * Extract a specific group matched by a Java regex, from the specified string column.
    * If the regex did not match, or the specified group did not match, an empty string is returned.
+   * if the specified group index exceeds the group count of regex, an IllegalArgumentException
+   * will be thrown.
    *
    * @group string_funcs
    * @since 1.5.0
    */
   def regexp_extract(e: Column, exp: String, groupIdx: Int): Column = withExpr {
     RegExpExtract(e.expr, lit(exp).expr, lit(groupIdx).expr)
+  }
+
+  /**
+   * Extract all specific groups matched by a Java regex, from the specified string column.
+   * If the regex did not match, or the specified group did not match, return an empty array.
+   * if the specified group index exceeds the group count of regex, an IllegalArgumentException
+   * will be thrown.
+   *
+   * @group string_funcs
+   * @since 3.1.0
+   */
+  def regexp_extract_all(e: Column, exp: String, groupIdx: Int): Column = withExpr {
+    RegExpExtractAll(e.expr, lit(exp).expr, lit(groupIdx).expr)
   }
 
   /**
@@ -2715,7 +2760,8 @@ object functions {
   }
 
   /**
-   * Returns the current date as a date column.
+   * Returns the current date at the start of query evaluation as a date column.
+   * All calls of current_date within the same query return the same value.
    *
    * @group datetime_funcs
    * @since 1.5.0
@@ -2723,7 +2769,8 @@ object functions {
   def current_date(): Column = withExpr { CurrentDate() }
 
   /**
-   * Returns the current timestamp as a timestamp column.
+   * Returns the current timestamp at the start of query evaluation as a timestamp column.
+   * All calls of current_timestamp within the same query return the same value.
    *
    * @group datetime_funcs
    * @since 1.5.0
@@ -3402,8 +3449,22 @@ object functions {
    * @group collection_funcs
    * @since 2.4.0
    */
-  def slice(x: Column, start: Int, length: Int): Column = withExpr {
-    Slice(x.expr, Literal(start), Literal(length))
+  def slice(x: Column, start: Int, length: Int): Column =
+    slice(x, lit(start), lit(length))
+
+  /**
+   * Returns an array containing all the elements in `x` from index `start` (or starting from the
+   * end if `start` is negative) with the specified `length`.
+   *
+   * @param x the array column to be sliced
+   * @param start the starting index
+   * @param length the length of the slice
+   *
+   * @group collection_funcs
+   * @since 3.1.0
+   */
+  def slice(x: Column, start: Column, length: Column): Column = withExpr {
+    Slice(x.expr, start.expr, length.expr)
   }
 
   /**

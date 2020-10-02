@@ -17,12 +17,50 @@
 
 package org.apache.spark.sql.execution.datasources.v2
 
-import org.apache.spark.sql.Dataset
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
-import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.sources.InsertableRelation
+import org.apache.spark.sql.connector.catalog.SupportsWrite
+import org.apache.spark.sql.execution.{AlreadyOptimized, SparkPlan}
+import org.apache.spark.sql.sources.{AlwaysTrue, Filter, InsertableRelation}
+import org.apache.spark.sql.util.CaseInsensitiveStringMap
+
+/**
+ * Physical plan node for append into a v2 table using V1 write interfaces.
+ *
+ * Rows in the output data set are appended.
+ */
+case class AppendDataExecV1(
+    table: SupportsWrite,
+    writeOptions: CaseInsensitiveStringMap,
+    plan: LogicalPlan) extends V1FallbackWriters {
+
+  override protected def run(): Seq[InternalRow] = {
+    writeWithV1(newWriteBuilder().buildForV1Write())
+  }
+}
+
+/**
+ * Physical plan node for overwrite into a v2 table with V1 write interfaces. Note that when this
+ * interface is used, the atomicity of the operation depends solely on the target data source.
+ *
+ * Overwrites data in a table matched by a set of filters. Rows matching all of the filters will be
+ * deleted and rows in the output data set are appended.
+ *
+ * This plan is used to implement SaveMode.Overwrite. The behavior of SaveMode.Overwrite is to
+ * truncate the table -- delete all rows -- and append the output data set. This uses the filter
+ * AlwaysTrue to delete all rows.
+ */
+case class OverwriteByExpressionExecV1(
+    table: SupportsWrite,
+    deleteWhere: Array[Filter],
+    writeOptions: CaseInsensitiveStringMap,
+    plan: LogicalPlan) extends V1FallbackWriters {
+
+  private def isTruncate(filters: Array[Filter]): Boolean = {
+    filters.length == 1 && filters(0).isInstanceOf[AlwaysTrue]
+  }
+>>>>>>> upstream/master
 
 // TODO: fix name
 case class WriteToDataSourceV2FallbackExec(
@@ -41,11 +79,11 @@ case class WriteToDataSourceV2FallbackExec(
  * A trait that allows Tables that use V1 Writer interfaces to append data.
  */
 trait SupportsV1Write extends SparkPlan {
-  // TODO: We should be able to work on SparkPlans at this point.
   def plan: LogicalPlan
 
   protected def writeWithV1(relation: InsertableRelation): Seq[InternalRow] = {
-    relation.insert(Dataset.ofRows(sqlContext.sparkSession, plan), overwrite = false)
+    // The `plan` is already optimized, we should not analyze and optimize it again.
+    relation.insert(AlreadyOptimized.dataFrame(sqlContext.sparkSession, plan), overwrite = false)
     Nil
   }
 }

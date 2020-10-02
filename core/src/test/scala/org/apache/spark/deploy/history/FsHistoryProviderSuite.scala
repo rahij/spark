@@ -34,8 +34,9 @@ import org.apache.hadoop.security.AccessControlException
 import org.json4s.jackson.JsonMethods._
 import org.mockito.ArgumentMatchers.{any, argThat}
 import org.mockito.Mockito.{doThrow, mock, spy, verify, when}
-import org.scalatest.Matchers
 import org.scalatest.concurrent.Eventually._
+import org.scalatest.matchers.must.Matchers
+import org.scalatest.matchers.should.Matchers._
 
 import org.apache.spark.{JobExecutionStatus, SecurityManager, SPARK_VERSION, SparkConf, SparkFunSuite}
 import org.apache.spark.deploy.SparkHadoopUtil
@@ -89,9 +90,13 @@ class FsHistoryProviderSuite extends SparkFunSuite with Matchers with Logging {
     }
   }
 
-  private def testAppLogParsing(inMemory: Boolean): Unit = {
+  test("SPARK-31608: parse application logs with HybridStore") {
+    testAppLogParsing(false, true)
+  }
+
+  private def testAppLogParsing(inMemory: Boolean, useHybridStore: Boolean = false): Unit = {
     val clock = new ManualClock(12345678)
-    val conf = createTestConf(inMemory = inMemory)
+    val conf = createTestConf(inMemory = inMemory, useHybridStore = useHybridStore)
     val provider = new FsHistoryProvider(conf, clock)
 
     // Write a new-style application log.
@@ -1508,7 +1513,9 @@ class FsHistoryProviderSuite extends SparkFunSuite with Matchers with Logging {
     new FileOutputStream(file).close()
   }
 
-  private def createTestConf(inMemory: Boolean = false): SparkConf = {
+  private def createTestConf(
+      inMemory: Boolean = false,
+      useHybridStore: Boolean = false): SparkConf = {
     val conf = new SparkConf()
       .set(HISTORY_LOG_DIR, testDir.getAbsolutePath())
       .set(FAST_IN_PROGRESS_PARSING, true)
@@ -1516,6 +1523,7 @@ class FsHistoryProviderSuite extends SparkFunSuite with Matchers with Logging {
     if (!inMemory) {
       conf.set(LOCAL_STORE_DIR, Utils.createTempDir().getAbsolutePath())
     }
+    conf.set(HYBRID_STORE_ENABLED, useHybridStore)
 
     conf
   }
